@@ -36,7 +36,7 @@ export default function Home() {
               <GraceLogo size="medium" variant="color" animated />
             </div>
             <h1 className="relative text-heading-lg md:text-5xl font-bold text-deep-navy mb-4">
-              Welcome to Grace Companion
+              Website Title
             </h1>
             <p className="relative text-xl text-deep-navy/80 mb-8">
               Complete care technology suite for elders, families, care facilities and independent professionals
