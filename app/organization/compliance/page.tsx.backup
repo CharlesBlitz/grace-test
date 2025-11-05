@@ -1,0 +1,507 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
+import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/lib/authContext';
+import { useRouter } from 'next/navigation';
+import {
+  Shield,
+  FileCheck,
+  Heart,
+  Users,
+  TrendingUp,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Download,
+  RefreshCw,
+  FileText,
+  BarChart3,
+  Search,
+  ArrowRight,
+} from 'lucide-react';
+import { complianceService } from '@/lib/complianceService';
+
+interface ComplianceData {
+  overallScore: number;
+  safeScore: number;
+  effectiveScore: number;
+  caringScore: number;
+  responsiveScore: number;
+  wellLedScore: number;
+  dailyNotesCoverage: number;
+  carePlanCoverage: number;
+  assessmentCoverage: number;
+  overdueDocumentationCount: number;
+  missingSignaturesCount: number;
+  incompleteCarePlansCount: number;
+  outstandingIncidentsCount: number;
+}
+
+export default function ComplianceDashboard() {
+  const { user } = useAuth();
+  const router = useRouter();
+  const [organizationId, setOrganizationId] = useState<string>('');
+  const [organizationName, setOrganizationName] = useState<string>('');
+  const [compliance, setCompliance] = useState<ComplianceData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [calculating, setCalculating] = useState(false);
+  const [lastCalculated, setLastCalculated] = useState<Date | null>(null);
+
+  useEffect(() => {
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  const loadData = async () => {
+    try {
+      const { data: orgUser } = await supabase
+        .from('organization_users')
+        .select('organization_id, organizations(name)')
+        .eq('user_id', user?.id)
+        .single();
+
+      if (!orgUser) {
+        router.push('/organization/register');
+        return;
+      }
+
+      setOrganizationId(orgUser.organization_id);
+      setOrganizationName((orgUser.organizations as any)?.name || '');
+
+      const { data: latestScore } = await supabase
+        .from('cqc_compliance_scores')
+        .select('*')
+        .eq('organization_id', orgUser.organization_id)
+        .order('calculation_date', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (latestScore) {
+        setCompliance({
+          overallScore: latestScore.overall_score,
+          safeScore: latestScore.safe_score,
+          effectiveScore: latestScore.effective_score,
+          caringScore: latestScore.caring_score,
+          responsiveScore: latestScore.responsive_score,
+          wellLedScore: latestScore.well_led_score,
+          dailyNotesCoverage: latestScore.daily_notes_coverage,
+          carePlanCoverage: latestScore.care_plan_coverage,
+          assessmentCoverage: latestScore.assessment_coverage,
+          overdueDocumentationCount: latestScore.overdue_documentation_count,
+          missingSignaturesCount: latestScore.missing_signatures_count,
+          incompleteCarePlansCount: latestScore.incomplete_care_plans_count,
+          outstandingIncidentsCount: latestScore.outstanding_incidents_count,
+        });
+        setLastCalculated(new Date(latestScore.created_at));
+      }
+    } catch (error) {
+      console.error('Error loading compliance data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const calculateCompliance = async () => {
+    if (!organizationId) return;
+
+    setCalculating(true);
+    try {
+      const { score, error } = await complianceService.calculateComplianceScore(organizationId);
+
+      if (error) {
+        console.error('Error calculating compliance:', error);
+        return;
+      }
+
+      if (score) {
+        setCompliance(score);
+        setLastCalculated(new Date());
+      }
+    } catch (error) {
+      console.error('Exception calculating compliance:', error);
+    } finally {
+      setCalculating(false);
+    }
+  };
+
+  const getScoreColor = (score: number) => {
+    if (score >= 90) return 'text-green-600';
+    if (score >= 80) return 'text-blue-600';
+    if (score >= 70) return 'text-yellow-600';
+    return 'text-red-600';
+  };
+
+  const getScoreBgColor = (score: number) => {
+    if (score >= 90) return 'bg-green-50 border-green-200';
+    if (score >= 80) return 'bg-blue-50 border-blue-200';
+    if (score >= 70) return 'bg-yellow-50 border-yellow-200';
+    return 'bg-red-50 border-red-200';
+  };
+
+  const getRating = (score: number) => {
+    if (score >= 95) return 'Outstanding';
+    if (score >= 85) return 'Good';
+    if (score >= 70) return 'Requires Improvement';
+    return 'Inadequate';
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-slate-600">Loading compliance dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 py-8">
+      <div className="max-w-7xl mx-auto px-4">
+        <div className="mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900 mb-2 flex items-center gap-3">
+                <Shield className="h-8 w-8 text-blue-600" />
+                CQC Compliance Dashboard
+              </h1>
+              <p className="text-slate-600">
+                Comprehensive compliance monitoring and inspection readiness for {organizationName}
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={calculateCompliance} disabled={calculating}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${calculating ? 'animate-spin' : ''}`} />
+                {calculating ? 'Calculating...' : 'Recalculate'}
+              </Button>
+              <Button onClick={() => router.push('/organization/compliance/inspection-report')}>
+                <FileText className="h-4 w-4 mr-2" />
+                Generate Report
+              </Button>
+            </div>
+          </div>
+          {lastCalculated && (
+            <p className="text-sm text-slate-500 mt-2">
+              Last calculated: {lastCalculated.toLocaleString()}
+            </p>
+          )}
+        </div>
+
+        {!compliance && (
+          <Card className="mb-8 border-blue-200 bg-blue-50">
+            <CardHeader>
+              <CardTitle className="text-blue-900">Welcome to Compliance Monitoring</CardTitle>
+              <CardDescription className="text-blue-700">
+                Calculate your first compliance score to get started
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button onClick={calculateCompliance} disabled={calculating}>
+                <BarChart3 className="h-4 w-4 mr-2" />
+                Calculate Compliance Score
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {compliance && (
+          <>
+            <Card className={`mb-8 border-2 ${getScoreBgColor(compliance.overallScore)}`}>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-600 mb-1">Overall Compliance Score</p>
+                    <div className="flex items-baseline gap-3">
+                      <p className={`text-5xl font-bold ${getScoreColor(compliance.overallScore)}`}>
+                        {compliance.overallScore}%
+                      </p>
+                      <Badge
+                        className={`text-sm ${
+                          compliance.overallScore >= 85
+                            ? 'bg-green-100 text-green-800'
+                            : compliance.overallScore >= 70
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : 'bg-red-100 text-red-800'
+                        }`}
+                      >
+                        {getRating(compliance.overallScore)}
+                      </Badge>
+                    </div>
+                  </div>
+                  <Shield className={`h-24 w-24 ${getScoreColor(compliance.overallScore)} opacity-20`} />
+                </div>
+                <div className="mt-4">
+                  <Progress value={compliance.overallScore} className="h-3" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <Shield className="h-5 w-5 text-blue-600" />
+                    <span className={`text-2xl font-bold ${getScoreColor(compliance.safeScore)}`}>
+                      {compliance.safeScore}%
+                    </span>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm font-medium text-slate-900">Safe</p>
+                  <p className="text-xs text-slate-500 mt-1">Safeguarding & risk management</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <TrendingUp className="h-5 w-5 text-green-600" />
+                    <span className={`text-2xl font-bold ${getScoreColor(compliance.effectiveScore)}`}>
+                      {compliance.effectiveScore}%
+                    </span>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm font-medium text-slate-900">Effective</p>
+                  <p className="text-xs text-slate-500 mt-1">Evidence-based care & outcomes</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <Heart className="h-5 w-5 text-red-600" />
+                    <span className={`text-2xl font-bold ${getScoreColor(compliance.caringScore)}`}>
+                      {compliance.caringScore}%
+                    </span>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm font-medium text-slate-900">Caring</p>
+                  <p className="text-xs text-slate-500 mt-1">Compassion, dignity & respect</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <Users className="h-5 w-5 text-purple-600" />
+                    <span className={`text-2xl font-bold ${getScoreColor(compliance.responsiveScore)}`}>
+                      {compliance.responsiveScore}%
+                    </span>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm font-medium text-slate-900">Responsive</p>
+                  <p className="text-xs text-slate-500 mt-1">Person-centered care</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <FileCheck className="h-5 w-5 text-orange-600" />
+                    <span className={`text-2xl font-bold ${getScoreColor(compliance.wellLedScore)}`}>
+                      {compliance.wellLedScore}%
+                    </span>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm font-medium text-slate-900">Well-Led</p>
+                  <p className="text-xs text-slate-500 mt-1">Governance & quality</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Tabs defaultValue="coverage" className="space-y-6">
+              <TabsList>
+                <TabsTrigger value="coverage">Documentation Coverage</TabsTrigger>
+                <TabsTrigger value="gaps">Compliance Gaps</TabsTrigger>
+                <TabsTrigger value="audit">Audit Trail</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="coverage" className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Daily Care Notes</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-baseline gap-2 mb-2">
+                        <span className="text-3xl font-bold">{compliance.dailyNotesCoverage}%</span>
+                        <span className="text-sm text-slate-500">coverage</span>
+                      </div>
+                      <Progress value={compliance.dailyNotesCoverage} className="mb-2" />
+                      <p className="text-xs text-slate-600">
+                        {compliance.dailyNotesCoverage >= 95
+                          ? 'Excellent coverage'
+                          : compliance.dailyNotesCoverage >= 85
+                          ? 'Good coverage'
+                          : 'Needs improvement'}
+                      </p>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Care Plans</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-baseline gap-2 mb-2">
+                        <span className="text-3xl font-bold">{compliance.carePlanCoverage}%</span>
+                        <span className="text-sm text-slate-500">coverage</span>
+                      </div>
+                      <Progress value={compliance.carePlanCoverage} className="mb-2" />
+                      <p className="text-xs text-slate-600">
+                        {compliance.incompleteCarePlansCount > 0
+                          ? `${compliance.incompleteCarePlansCount} incomplete`
+                          : 'All complete'}
+                      </p>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Assessments</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-baseline gap-2 mb-2">
+                        <span className="text-3xl font-bold">{compliance.assessmentCoverage}%</span>
+                        <span className="text-sm text-slate-500">coverage</span>
+                      </div>
+                      <Progress value={compliance.assessmentCoverage} className="mb-2" />
+                      <p className="text-xs text-slate-600">
+                        {compliance.assessmentCoverage >= 90
+                          ? 'Up to date'
+                          : 'Some assessments overdue'}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Action Required</CardTitle>
+                    <CardDescription>Items needing immediate attention</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {compliance.overdueDocumentationCount > 0 && (
+                      <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                        <div className="flex items-center gap-3">
+                          <Clock className="h-5 w-5 text-yellow-600" />
+                          <div>
+                            <p className="font-medium text-slate-900">Overdue Documentation</p>
+                            <p className="text-sm text-slate-600">
+                              {compliance.overdueDocumentationCount} items need review
+                            </p>
+                          </div>
+                        </div>
+                        <Button size="sm" variant="outline">
+                          Review
+                        </Button>
+                      </div>
+                    )}
+
+                    {compliance.missingSignaturesCount > 0 && (
+                      <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg border border-orange-200">
+                        <div className="flex items-center gap-3">
+                          <AlertTriangle className="h-5 w-5 text-orange-600" />
+                          <div>
+                            <p className="font-medium text-slate-900">Missing Signatures</p>
+                            <p className="text-sm text-slate-600">
+                              {compliance.missingSignaturesCount} documents unsigned
+                            </p>
+                          </div>
+                        </div>
+                        <Button size="sm" variant="outline">
+                          Sign
+                        </Button>
+                      </div>
+                    )}
+
+                    {compliance.outstandingIncidentsCount > 0 && (
+                      <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-200">
+                        <div className="flex items-center gap-3">
+                          <AlertTriangle className="h-5 w-5 text-red-600" />
+                          <div>
+                            <p className="font-medium text-slate-900">Outstanding Incidents</p>
+                            <p className="text-sm text-slate-600">
+                              {compliance.outstandingIncidentsCount} incidents unresolved
+                            </p>
+                          </div>
+                        </div>
+                        <Button size="sm" variant="outline">
+                          View
+                        </Button>
+                      </div>
+                    )}
+
+                    {compliance.overdueDocumentationCount === 0 &&
+                      compliance.missingSignaturesCount === 0 &&
+                      compliance.outstandingIncidentsCount === 0 && (
+                        <div className="flex items-center gap-3 p-4 bg-green-50 rounded-lg border border-green-200">
+                          <CheckCircle2 className="h-5 w-5 text-green-600" />
+                          <p className="text-sm text-green-800">All documentation is up to date!</p>
+                        </div>
+                      )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="gaps">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Search className="h-5 w-5" />
+                      Gap Analysis
+                    </CardTitle>
+                    <CardDescription>
+                      Identified areas requiring attention to maintain compliance
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button onClick={() => router.push('/organization/compliance/gaps')}>
+                      <ArrowRight className="h-4 w-4 mr-2" />
+                      View Full Gap Analysis
+                    </Button>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="audit">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <FileCheck className="h-5 w-5" />
+                      Audit Trail
+                    </CardTitle>
+                    <CardDescription>
+                      Complete record of all documentation and system changes
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button onClick={() => router.push('/organization/compliance/audit')}>
+                      <ArrowRight className="h-4 w-4 mr-2" />
+                      View Audit Trail
+                    </Button>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
